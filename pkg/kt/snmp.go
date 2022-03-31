@@ -618,6 +618,7 @@ func (d *SnmpDeviceConfig) SetTestWalker(w SNMPTestWalker) {
 
 type SNMPTestWalker interface {
 	WalkAll(string) ([]gosnmp.SnmpPDU, error)
+}
 
 type EAPIC EAPIConfig // Need a 2nd type alias to avoid stack overflow on parsing.
 
