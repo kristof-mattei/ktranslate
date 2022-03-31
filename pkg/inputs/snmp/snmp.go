@@ -34,6 +34,7 @@ var (
 	snmpOutFile    = flag.String("snmp_out_file", "", "If set, write updated snmp file here.")
 	snmpPollNow    = flag.String("snmp_poll_now", "", "If set, run one snmp poll for the specified device and then exit.")
 	snmpDiscoDur   = flag.Int("snmp_discovery_min", 0, "If set, run snmp discovery on this interval (in minutes).")
+	validateMib    = flag.Bool("snmp_validate", false, "If true, validate mib profiles and exit.")
 	ServiceName    = ""
 )
 
@@ -54,11 +55,15 @@ func StartSNMPPolls(ctx context.Context, snmpFile string, jchfChan chan []*kt.JC
 
 	// Load a mibdb if we have one.
 	if conf.Global != nil {
-		mdb, err := mibs.NewMibDB(conf.Global.MibDB, conf.Global.MibProfileDir, log)
+		mdb, err := mibs.NewMibDB(conf.Global.MibDB, conf.Global.MibProfileDir, *validateMib, log)
 		if err != nil {
 			return fmt.Errorf("There was an error when setting up the %s mibDB database and the %s profiles: %v.", conf.Global.MibDB, conf.Global.MibProfileDir, err)
 		}
 		mibdb = mdb
+		if *validateMib {
+			// We just want to validate that this was ok so time to exit now.
+			os.Exit(0)
+		}
 	} else {
 		log.Infof("Skipping configurable mibs")
 	}
@@ -230,6 +235,10 @@ func launchSnmp(ctx context.Context, conf *kt.SnmpGlobalConfig, device *kt.SnmpD
 	// Sometimes this device is pinging only. In this case, start the ping loop and return.
 	if device.PingOnly {
 		return launchPingOnly(ctx, conf, device, jchfChan, connectTimeout, retries, metrics, profile, log)
+	} else if conf.RunPing || device.RunPing {
+		if err := launchPingOnly(ctx, conf, device, jchfChan, connectTimeout, retries, metrics, profile, log); err != nil {
+			return err
+		}
 	}
 
 	// We need two of these, to avoid concurrent access by the two pollers.
@@ -389,7 +398,7 @@ func parseConfig(ctx context.Context, file string, log logger.ContextL) (*kt.Snm
 Handle the case where we're only doing a ping loop of a device.
 */
 func launchPingOnly(ctx context.Context, conf *kt.SnmpGlobalConfig, device *kt.SnmpDeviceConfig, jchfChan chan []*kt.JCHF, connectTimeout time.Duration, retries int, metrics *kt.SnmpDeviceMetric, profile *mibs.Profile, log logger.ContextL) error {
-	metricPoller := snmp_metrics.NewPoller(nil, conf, device, jchfChan, metrics, profile, log)
+	metricPoller := snmp_metrics.NewPollerForPing(conf, device, jchfChan, metrics, profile, log)
 
 	// We've now done everything we can do synchronously -- return to the client initialization
 	// code, and do everything else in the background
