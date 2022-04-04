@@ -134,6 +134,10 @@ type V3SNMPConfig struct {
 	origStr                  string
 }
 
+type MerakiConfig struct {
+	ApiKey string `yaml:"api_key"`
+}
+
 type EAPIConfig struct {
 	Host      string `yaml:"host"`
 	Username  string `yaml:"username"`
@@ -145,7 +149,8 @@ type EAPIConfig struct {
 
 // Contain various extensions to snmp which can be used to get data.
 type ExtensionSet struct {
-	EAPIConfig *EAPIConfig `yaml:"eapi_config,omitempty"` // Arista eAPI.
+	EAPIConfig *EAPIConfig   `yaml:"eapi_config,omitempty"`   // Arista eAPI.
+	Meraki     *MerakiConfig `yaml:"meraki_config,omitempty"` // Meraki API Ext.
 }
 
 type SnmpDeviceConfig struct {
