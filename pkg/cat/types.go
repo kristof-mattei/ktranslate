@@ -12,6 +12,7 @@ import (
 	"github.com/kentik/ktranslate/pkg/formats"
 	"github.com/kentik/ktranslate/pkg/inputs/flow"
 	"github.com/kentik/ktranslate/pkg/inputs/http"
+	"github.com/kentik/ktranslate/pkg/inputs/st"
 	"github.com/kentik/ktranslate/pkg/inputs/syslog"
 	"github.com/kentik/ktranslate/pkg/inputs/vpc"
 	"github.com/kentik/ktranslate/pkg/kt"
@@ -75,6 +76,7 @@ type Config struct {
 	AppMap            string
 	HttpInput         bool
 	Enricher          string
+	STSource          string
 }
 
 type KTranslate struct {
@@ -110,6 +112,7 @@ type KTranslate struct {
 	syslog       *syslog.KentikSyslog
 	http         *http.KentikHttpListener
 	enricher     *enrich.Enricher
+	st           st.KentikStreamer
 }
 
 type CustomMapper struct {

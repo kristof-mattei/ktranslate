@@ -19,6 +19,7 @@ import (
 	"github.com/kentik/ktranslate/pkg/inputs/flow"
 	ihttp "github.com/kentik/ktranslate/pkg/inputs/http"
 	"github.com/kentik/ktranslate/pkg/inputs/snmp"
+	"github.com/kentik/ktranslate/pkg/inputs/st"
 	"github.com/kentik/ktranslate/pkg/inputs/syslog"
 	"github.com/kentik/ktranslate/pkg/inputs/vpc"
 	"github.com/kentik/ktranslate/pkg/kt"
@@ -681,6 +682,16 @@ func (kc *KTranslate) Run(ctx context.Context) error {
 			return err
 		}
 		kc.http = sh
+	}
+
+	// If we're looking for streaming telemetry
+	if kc.config.STSource != "" {
+		assureInput()
+		st, err := st.NewStreamer(ctx, kc.config.STSource, kc.config.MaxFlowPerMessage, kc.log.GetLogger().GetUnderlyingLogger(), kc.registry, kc.inputChan, kc.apic)
+		if err != nil {
+			return err
+		}
+		kc.st = st
 	}
 
 	// If we're sending self metrics via a chan to sinks. This one always get sent via nrm.

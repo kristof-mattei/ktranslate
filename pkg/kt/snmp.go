@@ -135,7 +135,6 @@ type V3SNMPConfig struct {
 }
 
 type EAPIConfig struct {
-	Host      string `yaml:"host"`
 	Username  string `yaml:"username"`
 	Password  string `yaml:"password"`
 	Transport string `yaml:"transport"`
@@ -143,9 +142,18 @@ type EAPIConfig struct {
 	origStr   string
 }
 
+type GNMIConfig struct {
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	CaCert     string `yaml:"ca_cert"`
+	ClientKey  string `yaml:"client_key"`
+	ClientCert string `yaml:"client_cert"`
+}
+
 // Contain various extensions to snmp which can be used to get data.
 type ExtensionSet struct {
 	EAPIConfig *EAPIConfig `yaml:"eapi_config,omitempty"` // Arista eAPI.
+	GNMIConfig *GNMIConfig `yaml:"gnmi_config,omitempty"` // gNMI Streaming Telemetry.
 }
 
 type SnmpDeviceConfig struct {

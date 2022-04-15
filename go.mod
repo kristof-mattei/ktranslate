@@ -30,7 +30,10 @@ require (
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/montanaflynn/stats v0.6.6
 	github.com/netsampler/goflow2 v1.0.5-0.20211114004132-de5e75172982
+	github.com/nileshsimaria/jtimon v2.1.0+incompatible // indirect
 	github.com/onsi/gomega v1.13.0 // indirect
+	github.com/openconfig/gnmi v0.0.0-20220131173555-39aa74195f0d // indirect
+	github.com/openconfig/ygot v0.17.0 // indirect
 	github.com/oschwald/geoip2-golang v1.5.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.30.0 // indirect
