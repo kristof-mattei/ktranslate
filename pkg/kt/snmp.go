@@ -148,6 +148,7 @@ type GNMIConfig struct {
 	CaCert     string `yaml:"ca_cert"`
 	ClientKey  string `yaml:"client_key"`
 	ClientCert string `yaml:"client_cert"`
+	Port       int    `yaml:"port"`
 }
 
 // Contain various extensions to snmp which can be used to get data.

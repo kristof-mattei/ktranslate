@@ -19,9 +19,7 @@ import (
 
 	auth_pb "github.com/nileshsimaria/jtimon/authentication"
 	"github.com/nileshsimaria/jtimon/telemetry"
-	"github.com/openconfig/gnmi/client"
 	"github.com/openconfig/gnmi/proto/gnmi"
-	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -64,6 +62,35 @@ type (
 		updatedIfIdx int
 		sensorName   string
 		metrics      *kt.SnmpDeviceMetric
+	}
+
+	creds struct {
+		Username string
+		Password string
+	}
+
+	// Destination contains data used to connect to a server.
+	destination struct {
+		// Addrs is a slice of addresses by which a target may be reached. Most
+		// clients will only handle the first element.
+		Addrs []string
+		// Target is the target of the query.  Maybe empty if the query is performed
+		// against an end target vs. a collector.
+		Target string
+		// Replica is the specific backend to contact.  This field is implementation
+		// specific and for direct agent communication should not be set. default is
+		// first available.
+		Replica int
+		// Timeout is the connection timeout for the query. It will *not* prevent a
+		// slow (or streaming) query from completing, this only affects the initial
+		// connection and broken connection detection.
+		//
+		// If Timeout is not set, default is 1 minute.
+		Timeout time.Duration
+		// Credentials are used for authentication with the target. Optional.
+		Credentials *creds
+		// TLS config to use when connecting to target. Optional.
+		TLS *tls.Config
 	}
 )
 
@@ -154,6 +181,7 @@ type GNMI struct {
 	recvCh   chan *telemetry.OpenConfigData
 	updateCh chan *sensorUpdate
 	subReq   telemetry.SubscriptionRequest
+	dest     *destination
 }
 
 func NewGNMIClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metrics *kt.SnmpDeviceMetric, log logger.ContextL) (*GNMI, error) {
@@ -171,8 +199,9 @@ func NewGNMIClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metrics 
 	err := kt.openST()
 	if err != nil {
 		return nil, err
-
 	}
+
+	log.Infof("Started gNMI connection to %s at %s", conf.DeviceName, kt.dest.Addrs)
 
 	return &kt, nil
 }
@@ -186,11 +215,19 @@ func (g *GNMI) Run(ctx context.Context, dur time.Duration) {
 	g.ctx = ctxC
 	g.cancel = cancel
 
+	// Kick off the async stuff here now.
+	go g.subscribe(g.conf.DeviceName)
+	go g.splitUpdates()
 	go g.processUpdates()
 }
 
 func (g *GNMI) openST() error {
-	d := &client.Destination{Addrs: []string{g.conf.DeviceIP}}
+	addr := g.conf.DeviceIP
+	if g.conf.Ext.GNMIConfig.Port > 0 {
+		addr = fmt.Sprintf("%s:%d", addr, g.conf.Ext.GNMIConfig.Port)
+	}
+
+	dest := &destination{Addrs: []string{addr}}
 	if g.conf.Ext.GNMIConfig.CaCert != "" && g.conf.Ext.GNMIConfig.ClientCert != "" && g.conf.Ext.GNMIConfig.ClientKey != "" {
 		certPool := x509.NewCertPool()
 		caCert, err := mkPEM("CERTIFICATE", g.conf.Ext.GNMIConfig.CaCert)
@@ -214,13 +251,13 @@ func (g *GNMI) openST() error {
 		if err != nil {
 			return err
 		}
-		d.TLS = &tls.Config{
+		dest.TLS = &tls.Config{
 			RootCAs:      certPool,
 			Certificates: []tls.Certificate{certificate},
 		}
 	}
 	if g.conf.Ext.GNMIConfig.Username != "" && g.conf.Ext.GNMIConfig.Password != "" {
-		d.Credentials = &client.Credentials{
+		dest.Credentials = &creds{
 			Username: g.conf.Ext.GNMIConfig.Username,
 			Password: g.conf.Ext.GNMIConfig.Password,
 		}
@@ -235,10 +272,8 @@ func (g *GNMI) openST() error {
 		g.subReq.PathList = append(g.subReq.PathList, &pathM)
 	}
 
-	go g.subscribe(g.conf.DeviceName, d)
-	go g.splitUpdates()
-
 	//g.metrics.STSeen.Update(1)
+	g.dest = dest
 
 	return nil
 }
@@ -261,15 +296,15 @@ func mkPEM(name, cert string) (string, error) {
 // efforts (since, for example, if we have the wrong TLS certs or the wrong
 // username/password, nothing will ever work until those are fixed, so might as
 // well just abort everything).
-func (g *GNMI) subscribe(deviceId string, d *client.Destination) {
+func (g *GNMI) subscribe(deviceId string) {
 	defer g.cancel()
 
 	sleepTime := initialSleep
 	connErrCnt := 0
 
 	for g.ctx.Err() == nil {
-		g.log.Debugf("%s dialing %s", deviceId, d.Addrs[0])
-		conn, retry, err := Dial(g.ctx, deviceId, d)
+		g.log.Debugf("%s dialing %s", deviceId, g.dest)
+		conn, retry, err := Dial(g.ctx, deviceId, g.dest)
 		if err != nil {
 			if !retry {
 				g.log.Errorf("%v", err)
@@ -284,7 +319,7 @@ func (g *GNMI) subscribe(deviceId string, d *client.Destination) {
 			time.Sleep(sleepTime)
 			continue
 		}
-		g.log.Infof("Connected %s to %s", deviceId, d.Addrs[0])
+		g.log.Infof("Connected %s to %s", deviceId, g.dest.Addrs[0])
 		sleepTime = initialSleep
 		connErrCnt = 0
 
@@ -389,7 +424,7 @@ OUTER:
 				}
 				// st.log.Infof(st.logPrefix, "kv: prefix: %s, key: %s, value: %+v", prefix, kv.GetKey(), kv.GetValue())
 				fullKey := prefix + kv.GetKey()
-				structuredKey, err := ygot.StringToStructuredPath(fullKey)
+				structuredKey, err := stringToStructuredPath(fullKey)
 				if err != nil {
 					g.log.Warnf("StringToStructuredPath error on %s: %v", fullKey, err)
 					continue
@@ -678,30 +713,30 @@ func (us *updateState) sendAsCHF() []*kt.JCHF {
 
 // Dial dials the server and logs in. If error is nil, returned conn has
 // established a connection to d.
-func Dial(ctx context.Context, deviceId string, d *client.Destination) (conn *grpc.ClientConn, retry bool, dErr error) {
-	if len(d.Addrs) != 1 { // can't happen
-		return nil, false, fmt.Errorf("Dial: d.Addrs must contain exactly one entry; got %+v", d.Addrs)
+func Dial(ctx context.Context, deviceId string, dest *destination) (conn *grpc.ClientConn, retry bool, dErr error) {
+	if len(dest.Addrs) != 1 { // can't happen
+		return nil, false, fmt.Errorf("Dial: dest.Addrs must contain exactly one entry; got %+v", dest.Addrs)
 	}
 	opts := []grpc.DialOption{
-		grpc.WithTimeout(d.Timeout),
+		grpc.WithTimeout(dest.Timeout),
 		grpc.WithBlock(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 	}
 
-	switch d.TLS {
+	switch dest.TLS {
 	case nil:
 		opts = append(opts, grpc.WithInsecure())
 	default:
-		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(d.TLS)))
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(dest.TLS)))
 	}
 
-	conn, err := grpc.DialContext(ctx, d.Addrs[0], opts...)
+	conn, err := grpc.DialContext(ctx, dest.Addrs[0], opts...)
 	if err != nil {
-		return nil, true, fmt.Errorf("%s dialing %s, timeout %v: error %v", deviceId, d.Addrs[0], d.Timeout, err)
+		return nil, true, fmt.Errorf("%s dialing %s, timeout %v: error %v", deviceId, dest.Addrs[0], dest.Timeout, err)
 	}
 
-	if d.Credentials != nil {
-		err := loginCheckJunos(deviceId, d.Credentials, conn)
+	if dest.Credentials != nil {
+		err := loginCheckJunos(deviceId, dest.Credentials, conn)
 		if err != nil {
 			return nil, false, err // auth errors are non-retryable.
 		}
@@ -709,15 +744,12 @@ func Dial(ctx context.Context, deviceId string, d *client.Destination) (conn *gr
 	return conn, true, nil
 }
 
-func loginCheckJunos(deviceId string, cred *client.Credentials, conn *grpc.ClientConn) error {
+func loginCheckJunos(deviceId string, cred *creds, conn *grpc.ClientConn) error {
 	if cred.Username != "" && cred.Password != "" {
-		user := cred.Username
-		pass := cred.Password
-
 		lc := auth_pb.NewLoginClient(conn)
 		dat, err := lc.LoginCheck(context.Background(),
-			&auth_pb.LoginRequest{UserName: user,
-				Password: pass,
+			&auth_pb.LoginRequest{UserName: cred.Username,
+				Password: cred.Password,
 				ClientId: deviceId,
 			})
 		if err != nil {
