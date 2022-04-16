@@ -221,6 +221,9 @@ func (kc *KTranslate) cleanup() {
 	if kc.syslog != nil {
 		kc.syslog.Close()
 	}
+	if kc.st != nil {
+		kc.st.Close()
+	}
 }
 
 // GetStatus implements the baseserver.Service interface.

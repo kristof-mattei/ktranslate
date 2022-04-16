@@ -5,6 +5,7 @@ go 1.16
 require (
 	cloud.google.com/go/pubsub v1.17.1
 	cloud.google.com/go/storage v1.18.2
+	github.com/Juniper/jtimon v1.0.0
 	github.com/aristanetworks/goeapi v0.6.0
 	github.com/aws/aws-lambda-go v1.27.0
 	github.com/aws/aws-sdk-go v1.41.19
@@ -14,6 +15,7 @@ require (
 	github.com/elliotchance/orderedmap v1.4.0
 	github.com/go-ping/ping v0.0.0-20211014180314-6e2b003bffdd
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gosnmp/gosnmp v1.34.0
@@ -22,6 +24,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/judwhite/go-svc v1.2.1
 	github.com/kentik/api-schema-public v0.0.0-20211011204132-acc22cb40b78
+	github.com/kentik/bigmuddy-network-telemetry-proto v0.0.1
 	github.com/kentik/go-metrics v0.0.0-20200109025407-4bfd4a9b42c5
 	github.com/kentik/patricia v0.0.0-20210909164817-21603333b70e
 	github.com/liamg/furious v0.0.0-20191231090757-c295c872d6c1
@@ -32,7 +35,6 @@ require (
 	github.com/nileshsimaria/jtimon v2.1.0+incompatible
 	github.com/onsi/gomega v1.13.0 // indirect
 	github.com/openconfig/gnmi v0.0.0-20220131173555-39aa74195f0d
-	github.com/openconfig/ygot v0.17.0
 	github.com/oschwald/geoip2-golang v1.5.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.30.0 // indirect
