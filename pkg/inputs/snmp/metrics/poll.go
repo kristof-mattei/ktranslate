@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gosnmp/gosnmp"
+	go_metrics "github.com/kentik/go-metrics"
+
 	"github.com/kentik/ktranslate/pkg/eggs/logger"
 	"github.com/kentik/ktranslate/pkg/inputs/snmp/mibs"
 	"github.com/kentik/ktranslate/pkg/inputs/snmp/ping"
@@ -31,7 +33,7 @@ type Poller struct {
 	extension        extension.Extension
 }
 
-func NewPoller(server *gosnmp.GoSNMP, gconf *kt.SnmpGlobalConfig, conf *kt.SnmpDeviceConfig, jchfChan chan []*kt.JCHF, metrics *kt.SnmpDeviceMetric, profile *mibs.Profile, log logger.ContextL) *Poller {
+func NewPoller(server *gosnmp.GoSNMP, gconf *kt.SnmpGlobalConfig, conf *kt.SnmpDeviceConfig, jchfChan chan []*kt.JCHF, metrics *kt.SnmpDeviceMetric, registry go_metrics.Registry, profile *mibs.Profile, log logger.ContextL) *Poller {
 	// Default poll rate is 5 min. This is what a lot of SNMP billing is on.
 	counterTimeSec := 5 * 60
 	if conf != nil && conf.PollTimeSec > 0 {
@@ -74,7 +76,7 @@ func NewPoller(server *gosnmp.GoSNMP, gconf *kt.SnmpGlobalConfig, conf *kt.SnmpD
 	}
 
 	// If we are extending the metrics for this device in any way, set it up now.
-	ext, err := extension.NewExtension(jchfChan, conf, metrics, log)
+	ext, err := extension.NewExtension(jchfChan, conf, metrics, registry, log)
 	if err != nil {
 		log.Errorf("Cannot setup extension for %s -> %s: %v", err, conf.DeviceIP, conf.DeviceName)
 	} else if ext != nil {

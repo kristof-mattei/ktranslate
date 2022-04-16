@@ -50,7 +50,7 @@ func pollOnce(ctx context.Context, tdevice string, conf *kt.SnmpConfig, connectT
 
 	nm := kt.NewSnmpDeviceMetric(registry, device.DeviceName)
 	metadataPoller := metadata.NewPoller(metadataServer, conf.Global, device, jchfChan, nm, profile, log)
-	metricPoller := snmp_metrics.NewPoller(metricsServer, conf.Global, device, jchfChan, nm, profile, log)
+	metricPoller := snmp_metrics.NewPoller(metricsServer, conf.Global, device, jchfChan, nm, registry, profile, log)
 
 	metadataPoller.StartLoop(ctx)
 	// Give a little time to get this done.

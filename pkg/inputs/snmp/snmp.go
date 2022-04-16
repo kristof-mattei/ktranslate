@@ -208,7 +208,7 @@ func runSnmpPolling(ctx context.Context, snmpFile string, jchfChan chan []*kt.JC
 			return err
 		}
 
-		err = launchSnmp(ctx, conf.Global, device, jchfChan, connectTimeout, retries, nm, profile, cl)
+		err = launchSnmp(ctx, conf.Global, device, jchfChan, connectTimeout, retries, nm, registry, profile, cl)
 		if err != nil {
 			return err
 		}
@@ -231,7 +231,7 @@ func launchSnmpTrap(conf *kt.SnmpConfig, jchfChan chan []*kt.JCHF, metrics *kt.S
 	return nil
 }
 
-func launchSnmp(ctx context.Context, conf *kt.SnmpGlobalConfig, device *kt.SnmpDeviceConfig, jchfChan chan []*kt.JCHF, connectTimeout time.Duration, retries int, metrics *kt.SnmpDeviceMetric, profile *mibs.Profile, log logger.ContextL) error {
+func launchSnmp(ctx context.Context, conf *kt.SnmpGlobalConfig, device *kt.SnmpDeviceConfig, jchfChan chan []*kt.JCHF, connectTimeout time.Duration, retries int, metrics *kt.SnmpDeviceMetric, registry go_metrics.Registry, profile *mibs.Profile, log logger.ContextL) error {
 	// Sometimes this device is pinging only. In this case, start the ping loop and return.
 	if device.PingOnly {
 		return launchPingOnly(ctx, conf, device, jchfChan, connectTimeout, retries, metrics, profile, log)
@@ -258,7 +258,7 @@ func launchSnmp(ctx context.Context, conf *kt.SnmpGlobalConfig, device *kt.SnmpD
 	}
 
 	metadataPoller := metadata.NewPoller(metadataServer, conf, device, jchfChan, metrics, profile, log)
-	metricPoller := snmp_metrics.NewPoller(metricsServer, conf, device, jchfChan, metrics, profile, log)
+	metricPoller := snmp_metrics.NewPoller(metricsServer, conf, device, jchfChan, metrics, registry, profile, log)
 
 	// We've now done everything we can do synchronously -- return to the client initialization
 	// code, and do everything else in the background

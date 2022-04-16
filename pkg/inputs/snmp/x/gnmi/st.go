@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	//go_metrics "github.com/kentik/go-metrics"
+	go_metrics "github.com/kentik/go-metrics"
 
 	"github.com/kentik/ktranslate/pkg/eggs/logger"
 	"github.com/kentik/ktranslate/pkg/kt"
@@ -61,7 +61,7 @@ type (
 		name2idx     map[string]uint32
 		updatedIfIdx int
 		sensorName   string
-		metrics      *kt.SnmpDeviceMetric
+		metrics      *STMetric
 	}
 
 	creds struct {
@@ -171,11 +171,18 @@ var (
 	initialSleep = time.Minute
 )
 
+type STMetric struct {
+	STErrors     go_metrics.Meter
+	STSeen       go_metrics.Gauge
+	STIntTotal   go_metrics.Gauge
+	STIntChanged go_metrics.Gauge
+}
+
 type GNMI struct {
 	log      logger.ContextL
 	jchfChan chan []*kt.JCHF
 	conf     *kt.SnmpDeviceConfig
-	metrics  *kt.SnmpDeviceMetric
+	metrics  *STMetric
 	ctx      context.Context
 	cancel   context.CancelFunc
 	recvCh   chan *telemetry.OpenConfigData
@@ -184,16 +191,21 @@ type GNMI struct {
 	dest     *destination
 }
 
-func NewGNMIClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metrics *kt.SnmpDeviceMetric, log logger.ContextL) (*GNMI, error) {
+func NewGNMIClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, registry go_metrics.Registry, log logger.ContextL) (*GNMI, error) {
 	kt := GNMI{
 		log:      log,
 		jchfChan: jchfChan,
 		conf:     conf,
-		metrics:  metrics,
 		// We don't want lots of these to be outstanding.
 		recvCh: make(chan *telemetry.OpenConfigData, 1),
 		// But there are several of these for each of the above.
 		updateCh: make(chan *sensorUpdate, 1000),
+		metrics: &STMetric{
+			STErrors:     go_metrics.GetOrRegisterMeter(fmt.Sprintf("st.errors^device_name=%s^force=true", conf.DeviceName), registry),
+			STSeen:       go_metrics.GetOrRegisterGauge(fmt.Sprintf("st.seen^device_name=%s^force=true", conf.DeviceName), registry),
+			STIntTotal:   go_metrics.GetOrRegisterGauge(fmt.Sprintf("st.int.total^device_name=%s^force=true", conf.DeviceName), registry),
+			STIntChanged: go_metrics.GetOrRegisterGauge(fmt.Sprintf("st.int.changes^device_name=%s^force=true", conf.DeviceName), registry),
+		},
 	}
 
 	err := kt.openST()
@@ -263,7 +275,7 @@ func (g *GNMI) openST() error {
 		}
 	}
 
-	//g.metrics.STSeen.Update(0)
+	g.metrics.STSeen.Update(0)
 
 	for path, sampleInterval := range paths {
 		var pathM telemetry.Path
@@ -272,7 +284,7 @@ func (g *GNMI) openST() error {
 		g.subReq.PathList = append(g.subReq.PathList, &pathM)
 	}
 
-	//g.metrics.STSeen.Update(1)
+	g.metrics.STSeen.Update(1)
 	g.dest = dest
 
 	return nil
@@ -340,7 +352,7 @@ func (g *GNMI) recvLoop(conn *grpc.ClientConn) error {
 
 	stream, err := octc.TelemetrySubscribe(subscrCtx, &g.subReq)
 	if err != nil {
-		//g.metrics.STErrors.Mark(1)
+		g.metrics.STErrors.Mark(1)
 		return fmt.Errorf("Error subscribing to ST: %v", err)
 	}
 
@@ -367,7 +379,7 @@ func (g *GNMI) recvLoop(conn *grpc.ClientConn) error {
 				if p.Message() == "Authorization failed" {
 					// Auth is wrong; just bail on all ST operations.
 					g.log.Debugf("recvLoop: Authorization failed")
-					//st.metrics.STErrors.Mark(1)
+					g.metrics.STErrors.Mark(1)
 					return err
 				}
 
@@ -378,7 +390,7 @@ func (g *GNMI) recvLoop(conn *grpc.ClientConn) error {
 				}
 			}
 
-			//st.metrics.STErrors.Mark(1)
+			g.metrics.STErrors.Mark(1)
 			g.log.Infof("TelemetrySubscribe Recv error: %v, %T", err, err)
 			break
 		}
@@ -464,7 +476,7 @@ func (g *GNMI) processUpdates() {
 			}
 			err := us.processSingleUpdate(su)
 			if err != nil {
-				//st.metrics.STErrors.Mark(1)
+				g.metrics.STErrors.Mark(1)
 				g.log.Errorf("%v", err)
 			}
 
@@ -484,7 +496,7 @@ func (g *GNMI) Close() {
 	g.cancel()
 }
 
-func newUpdateState(log logger.ContextL, metrics *kt.SnmpDeviceMetric, conf *kt.SnmpDeviceConfig) *updateState {
+func newUpdateState(log logger.ContextL, metrics *STMetric, conf *kt.SnmpDeviceConfig) *updateState {
 	return &updateState{
 		log:  log,
 		conf: conf,
@@ -650,8 +662,8 @@ func verifyIPPath(path *gnmi.Path, finalComponent string) bool {
 
 func (us *updateState) sendAsCHF() []*kt.JCHF {
 
-	//us.metrics.STIntTotal.Update(int64(len(us.deltaBasis)))
-	//us.metrics.STIntChanged.Update(int64(us.updatedIfIdx))
+	us.metrics.STIntTotal.Update(int64(len(us.deltaBasis)))
+	us.metrics.STIntChanged.Update(int64(us.updatedIfIdx))
 	us.updatedIfIdx = 0
 
 	// us.log.Infof(us.logPrefix, "len us.deltaBasis: %d", len(us.deltaBasis))
