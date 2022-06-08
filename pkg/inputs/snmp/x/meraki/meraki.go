@@ -141,7 +141,6 @@ type client struct {
 }
 
 func (c *MerakiClient) getClients() ([]*kt.JCHF, error) {
-
 	clientSet := map[string][]client{}
 	for _, network := range c.networks {
 		params := networks.NewGetNetworkClientsParams()
@@ -156,39 +155,6 @@ func (c *MerakiClient) getClients() ([]*kt.JCHF, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		/**
-				b = []byte(`[
-		    {
-		        "usage": { "sent": 138, "recv": 61 },
-		        "id": "k74272e",
-		        "description": "Miles's phone",
-		        "mac": "22:33:44:55:66:77",
-		        "ip": "1.2.3.4",
-		        "user": "milesmeraki",
-		        "vlan": "255",
-		        "namedVlan": "Named Vlan",
-		        "switchport": null,
-		        "adaptivePolicyGroup": null,
-		        "ip6": "",
-		        "firstSeen": 1518365681,
-		        "lastSeen": 1526087474,
-		        "manufacturer": "Apple",
-		        "os": "iOS",
-		        "deviceTypePrediction": "iPhone SE, iOS9.3.5",
-		        "recentDeviceSerial": "Q234-ABCD-5678",
-		        "recentDeviceName": "My AP",
-		        "recentDeviceMac": "00:11:22:33:44:55",
-		        "recentDeviceConnection": "Wired",
-		        "ssid": "My SSID",
-		        "status": "Online",
-		        "notes": "My client note",
-		        "ip6Local": "fe80:0:0:0:1430:aac1:6826:75ab",
-		        "smInstalled": true,
-		        "groupPolicy8021x": "Student_Access"
-		    }
-		]`)
-		*/
 
 		var clients []client
 		err = json.Unmarshal(b, &clients)
