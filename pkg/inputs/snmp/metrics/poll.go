@@ -103,8 +103,8 @@ func NewPollerForPing(gconf *kt.SnmpGlobalConfig, conf *kt.SnmpDeviceConfig, jch
 	if pingSec == 0 { // If not per device, try per global.
 		pingSec = gconf.PingSec
 	}
-	if pingSec == 0 { // Default to 1 here if not defined in either global or per device levels.
-		pingSec = 1
+	if pingSec == 0 { // Default to 60 (1/per min) here if not defined in either global or per device levels.
+		pingSec = 60
 	}
 
 	poller := Poller{
