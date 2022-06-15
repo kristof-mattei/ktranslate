@@ -34,6 +34,7 @@ type MerakiClient struct {
 type networkDesc struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	org  *organizations.GetOrganizationsOKBodyItems0
 }
 
 func NewMerakiClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metrics *kt.SnmpDeviceMetric, log logger.ContextL) (*MerakiClient, error) {
@@ -64,6 +65,7 @@ func NewMerakiClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metric
 	}
 
 	for _, org := range prod.GetPayload() {
+		lorg := org
 		// Now list the networks for this org.
 		params := organizations.NewGetOrganizationNetworksParams()
 		params.SetOrganizationID(org.ID)
@@ -83,13 +85,14 @@ func NewMerakiClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metric
 		}
 
 		for _, network := range networks {
+			network.org = lorg
 			c.log.Infof("Adding network %s to list to track", network.Name)
 			c.networks = append(c.networks, network)
 		}
 
 		if len(networks) > 0 { // Only add this org in to track if it has some networks.
 			c.log.Infof("Adding organization %s to list to track", org.Name)
-			c.orgs = append(c.orgs, org)
+			c.orgs = append(c.orgs, lorg)
 		}
 	}
 
@@ -195,6 +198,7 @@ type networkDevice struct {
 	Tags      []string `json:"tags"`
 	NetworkID string   `json:"networkId"`
 	Firmware  string   `json:"firmware"`
+	network   networkDesc
 }
 
 func (c *MerakiClient) getNetworkDevices() (map[string][]networkDevice, error) {
@@ -223,6 +227,7 @@ func (c *MerakiClient) getNetworkDevices() (map[string][]networkDevice, error) {
 			if devices[i].Name == "" {
 				devices[i].Name = devices[i].Serial
 			}
+			devices[i].network = network
 		}
 
 		if len(devices) > 0 {
@@ -315,6 +320,10 @@ func (c *MerakiClient) parseClients(cs []client) ([]*kt.JCHF, error) {
 			dst.CustomStr["device_notes"] = client.device.Notes
 			dst.CustomStr["device_model"] = client.device.Model
 			dst.CustomStr["src_ip"] = client.device.LanIP
+			if client.device.network.org != nil {
+				dst.CustomStr["org_name"] = client.device.network.org.Name
+				dst.CustomStr["org_id"] = client.device.network.org.ID
+			}
 		} else {
 			dst.DeviceName = client.network // Here, device is this network's name.
 			dst.SrcAddr = c.conf.DeviceIP
