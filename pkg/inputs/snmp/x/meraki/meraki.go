@@ -417,6 +417,13 @@ type deviceUplink struct {
 	network        *networkDesc
 }
 
+/**
+1) Get all the uplinks with status
+2) Get the latency for these uplinks for any which have them
+3) Get usage for each network.
+
+*/
+
 func (c *MerakiClient) getUplinks(dur time.Duration) ([]*kt.JCHF, error) {
 
 	uplinkSet := map[string]*deviceUplink{}
