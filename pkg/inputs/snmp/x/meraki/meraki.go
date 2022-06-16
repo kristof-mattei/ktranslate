@@ -100,6 +100,12 @@ func NewMerakiClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metric
 	c.log.Infof("%s connected to API for %s with %d organization(s) and %d network(s).", c.GetName(), conf.DeviceName, len(c.orgs), len(c.networks))
 	c.client = client
 
+	if res, err := c.getUplinks(time.Duration(0)); err != nil {
+		c.log.Infof("Meraki cannot get Uplink Info: %v", err)
+	} else if len(res) > 0 {
+		c.jchfChan <- res
+	}
+
 	return &c, nil
 }
 
@@ -125,8 +131,16 @@ func (c *MerakiClient) Run(ctx context.Context, dur time.Duration) {
 			}
 			*/
 
-			if res, err := c.getDeviceClients(dur); err != nil {
-				c.log.Infof("Meraki cannot get Device Client Info: %v", err)
+			/*
+				if res, err := c.getDeviceClients(dur); err != nil {
+					c.log.Infof("Meraki cannot get Device Client Info: %v", err)
+				} else if len(res) > 0 {
+					c.jchfChan <- res
+				}
+			*/
+
+			if res, err := c.getUplinks(dur); err != nil {
+				c.log.Infof("Meraki cannot get Uplink Info: %v", err)
 			} else if len(res) > 0 {
 				c.jchfChan <- res
 			}
@@ -344,3 +358,167 @@ func (c *MerakiClient) parseClients(cs []client) ([]*kt.JCHF, error) {
 
 	return res, nil
 }
+
+type signalStat struct {
+	Rsrp string `json:"rsrp"`
+	Rsrq string `json:"rsrq"`
+}
+
+// Needed because sometimes meraki makes this a struct and other times an empty array, just to be f-ing annoying.
+type signalStatAlias signalStat
+
+func (a *signalStat) UnmarshalJSON(data []byte) error {
+	var stat = signalStatAlias{}
+	err := json.Unmarshal(data, &stat)
+	if err != nil {
+		set := []signalStatAlias{}
+		err := json.Unmarshal(data, &set)
+		if err != nil {
+			return err
+		}
+
+		if len(set) > 0 {
+			*a = signalStat(set[0])
+		}
+	} else {
+		*a = signalStat(stat)
+	}
+
+	return nil
+}
+
+type uplink struct {
+	PrimaryDNS     string     `json:"primaryDns"`
+	SecondaryDNS   string     `json:"secondaryDns"`
+	IpAssignedBy   string     `json:"ipAssignedBy"`
+	Interface      string     `json:"interface"`
+	Status         string     `json:"status"`
+	IP             string     `json:"ip"`
+	Gateway        string     `json:"gateway"`
+	PublicIP       string     `json:"publicIp"`
+	Provider       string     `json:"provider"`
+	ICCID          string     `json:"iccid"`
+	ConnectionType string     `json:"connectionType"`
+	Model          string     `json:"model"`
+	APN            string     `json:"apn"`
+	SignalStat     signalStat `json:"signalStat"`
+	DNS1           string     `json:"dns1"`
+	DNS2           string     `json:"dns2"`
+	SignalType     string     `json:"signalType"`
+}
+
+type deviceUplink struct {
+	Serial         string    `json:"serial"`
+	Model          string    `json:"model"`
+	LastReportedAt time.Time `json:"lastReportedAt"`
+	Uplinks        []uplink  `json:"uplinks"`
+	NetworkID      string    `json:"networkId"`
+	LatencyLoss    deviceUplinkLatency
+	network        *networkDesc
+}
+
+func (c *MerakiClient) getUplinks(dur time.Duration) ([]*kt.JCHF, error) {
+
+	uplinkSet := map[string]*deviceUplink{}
+	for _, org := range c.orgs {
+		params := organizations.NewGetOrganizationUplinksStatusesParams()
+		params.SetOrganizationID(org.ID)
+
+		prod, err := c.client.Organizations.GetOrganizationUplinksStatuses(params, c.auth)
+		if err != nil {
+			return nil, err
+		}
+
+		b, err := json.Marshal(prod.GetPayload())
+		if err != nil {
+			return nil, err
+		}
+
+		var uplinks []deviceUplink
+		err = json.Unmarshal(b, &uplinks)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, uplink := range uplinks {
+			for _, network := range c.networks {
+				if network.ID == uplink.NetworkID {
+					lnet := network
+					uplink.network = &lnet
+				}
+			}
+			if uplink.network == nil {
+				c.log.Errorf("Missing Network for Uplink %s", uplink.NetworkID, uplink.Serial)
+			}
+			if _, ok := uplinkSet[uplink.Serial]; ok {
+				c.log.Errorf("Duplicate Uplink %s", uplink.Serial)
+			} else {
+				uplinkSet[uplink.Serial] = &uplink
+			}
+		}
+	}
+
+	// Now, load latency for any of these which have them:
+	err := c.getUplinkLatencyLoss(dur, uplinkSet)
+	if err != nil {
+		return nil, err
+	}
+
+	c.log.Infof("Loaded %d Uplinks for %d Organizations", len(uplinkSet), len(c.orgs))
+
+	return nil, nil
+}
+
+type uplinkTS struct {
+	TS          time.Time `json:"ts":`
+	LossPercent float64   `json:"lossPercent"`
+	LatencyMS   float64   `json:"latencyMs"`
+}
+
+type deviceUplinkLatency struct {
+	Serial     string     `json:"serial"`
+	NetworkID  string     `json:"networkId"`
+	Uplink     string     `json:"uplink"`
+	IP         string     `json:"ip"`
+	TimeSeries []uplinkTS `json:"timeSeries"`
+}
+
+func (c *MerakiClient) getUplinkLatencyLoss(dur time.Duration, uplinkMap map[string]*deviceUplink) error {
+
+	for _, org := range c.orgs {
+		params := organizations.NewGetOrganizationDevicesUplinksLossAndLatencyParams()
+		params.SetOrganizationID(org.ID)
+
+		prod, err := c.client.Organizations.GetOrganizationDevicesUplinksLossAndLatency(params, c.auth)
+		if err != nil {
+			return err
+		}
+
+		b, err := json.Marshal(prod.GetPayload())
+		if err != nil {
+			return err
+		}
+
+		var uplinks []deviceUplinkLatency
+		err = json.Unmarshal(b, &uplinks)
+		if err != nil {
+			return err
+		}
+
+		for _, uplink := range uplinks {
+			if uu, ok := uplinkMap[uplink.Serial]; ok {
+				uu.LatencyLoss = uplink
+			} else {
+				c.log.Errorf("Missing Uplink %s In LatencyLoss", uplink.Serial)
+			}
+		}
+	}
+
+	return nil
+}
+
+/**
+GetOrganizationUplinksStatuses
+GetOrganizationDevicesUplinksLossAndLatency
+GetDeviceLossAndLatencyHistory
+*/
