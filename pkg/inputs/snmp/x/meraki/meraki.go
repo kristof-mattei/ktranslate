@@ -8,12 +8,12 @@ import (
 	"github.com/kentik/ktranslate/pkg/eggs/logger"
 	"github.com/kentik/ktranslate/pkg/kt"
 
-	apiclient "github.com/ddexterpark/dashboard-api-golang/client"
-	"github.com/ddexterpark/dashboard-api-golang/client/devices"
-	"github.com/ddexterpark/dashboard-api-golang/client/networks"
-	"github.com/ddexterpark/dashboard-api-golang/client/organizations"
 	"github.com/go-openapi/runtime"
 	httptransport "github.com/go-openapi/runtime/client"
+	apiclient "github.com/kentik/dashboard-api-golang/client"
+	"github.com/kentik/dashboard-api-golang/client/devices"
+	"github.com/kentik/dashboard-api-golang/client/networks"
+	"github.com/kentik/dashboard-api-golang/client/organizations"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -25,7 +25,7 @@ type MerakiClient struct {
 	jchfChan chan []*kt.JCHF
 	conf     *kt.SnmpDeviceConfig
 	metrics  *kt.SnmpDeviceMetric
-	client   *apiclient.MerakiAPIGolang
+	client   *apiclient.MerakiDashboard
 	auth     runtime.ClientAuthInfoWriter
 	orgs     []*organizations.GetOrganizationsOKBodyItems0
 	networks []networkDesc
