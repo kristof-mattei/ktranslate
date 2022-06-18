@@ -150,6 +150,7 @@ type MerakiConfig struct {
 
 // Contain various extensions to snmp which can be used to get data.
 type ExtensionSet struct {
+	ExtOnly      bool          `yaml:"ext_only"`
 	EAPIConfig   *EAPIConfig   `yaml:"eapi_config,omitempty"` // Arista eAPI.
 	MerakiConfig *MerakiConfig `yaml:"meraki_config,omitempty"`
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-openapi/runtime"
 	httptransport "github.com/go-openapi/runtime/client"
 	apiclient "github.com/kentik/dashboard-api-golang/client"
+	"github.com/kentik/dashboard-api-golang/client/appliance"
 	"github.com/kentik/dashboard-api-golang/client/devices"
 	"github.com/kentik/dashboard-api-golang/client/networks"
 	"github.com/kentik/dashboard-api-golang/client/organizations"
@@ -86,7 +87,7 @@ func NewMerakiClient(jchfChan chan []*kt.JCHF, conf *kt.SnmpDeviceConfig, metric
 
 		for _, network := range networks {
 			network.org = lorg
-			c.log.Infof("Adding network %s to list to track", network.Name)
+			c.log.Infof("Adding network %s %s to list to track", network.Name, network.ID)
 			c.networks = append(c.networks, network)
 		}
 
@@ -405,6 +406,8 @@ type uplink struct {
 	DNS1           string     `json:"dns1"`
 	DNS2           string     `json:"dns2"`
 	SignalType     string     `json:"signalType"`
+	Usage          []uplinkInterfaceUsage
+	LatencyLoss    deviceUplinkLatency
 }
 
 type deviceUplink struct {
@@ -413,7 +416,6 @@ type deviceUplink struct {
 	LastReportedAt time.Time `json:"lastReportedAt"`
 	Uplinks        []uplink  `json:"uplinks"`
 	NetworkID      string    `json:"networkId"`
-	LatencyLoss    deviceUplinkLatency
 	network        *networkDesc
 }
 
@@ -465,8 +467,13 @@ func (c *MerakiClient) getUplinks(dur time.Duration) ([]*kt.JCHF, error) {
 		}
 	}
 
+	err := c.getUplinkUsage(dur, uplinkSet)
+	if err != nil {
+		return nil, err
+	}
+
 	// Now, load latency for any of these which have them:
-	err := c.getUplinkLatencyLoss(dur, uplinkSet)
+	err = c.getUplinkLatencyLoss(dur, uplinkSet)
 	if err != nil {
 		return nil, err
 	}
@@ -524,7 +531,106 @@ func (c *MerakiClient) getUplinkLatencyLoss(dur time.Duration, uplinkMap map[str
 	return nil
 }
 
+type uplinkInterfaceUsage struct {
+	Interface string  `json:"interface"`
+	Sent      float64 `json:"sent"`
+	Received  float64 `json:"received"`
+}
+
+type uplinkUsage struct {
+	StartTime   time.Time              `json:"startTime"`
+	EndTime     time.Time              `json:"endTime"`
+	ByInterface []uplinkInterfaceUsage `json:"byInterface"`
+}
+
+func (c *MerakiClient) getUplinkUsage(dur time.Duration, uplinkMap map[string]*deviceUplink) error {
+
+	for _, network := range c.networks {
+		params := appliance.NewGetNetworkApplianceUplinksUsageHistoryParams()
+		params.SetNetworkID(network.ID)
+
+		prod, err := c.client.Appliance.GetNetworkApplianceUplinksUsageHistory(params, c.auth)
+		if err != nil {
+			c.log.Warnf("Cannot get Uplink Usage: %s %v", network.Name, err)
+			continue
+		}
+
+		b, err := json.Marshal(prod.GetPayload())
+		if err != nil {
+			return err
+		}
+
+		var uplinkHistories []uplinkUsage
+		err = json.Unmarshal(b, &uplinkHistories)
+		if err != nil {
+			return err
+		}
+
+		if len(uplinkHistories) > 0 {
+			for _, du := range uplinkMap {
+				if du.network.ID == network.ID {
+					for _, use := range uplinkHistories.ByInterface {
+						du.Uplinks[use.Interface].Usage = append(du.Uplinks[use.Interface].Usage, use)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *MerakiClient) parseUplinks(uplinkMap map[string]*deviceUplink) ([]*kt.JCHF, error) {
+	res := make([]*kt.JCHF, 0)
+	for _, device := range uplinkMap {
+		for _, uplink := range device.Uplinks {
+			dst := kt.NewJCHF()
+			dst.SrcAddr = IP
+			dst.DeviceName = device.network.Name + uplink.Interface
+
+			dst.CustomStr = map[string]string{
+				"network":         device.network.Name,
+				"status":          uplink.Status,
+				"connection_type": uplink.ConnectionType,
+			}
+			dst.CustomInt = map[string]int32{}
+			dst.CustomBigInt = map[string]int64{}
+			dst.EventType = kt.KENTIK_EVENT_SNMP_DEV_METRIC
+			//dst.Provider = c.conf.Provider // @TODO, pick a provider for this one.
+
+			dst.Timestamp = time.Now().Unix()
+			dst.CustomMetrics = map[string]kt.MetricInfo{}
+
+			dst.CustomBigInt["Sent"] = int64(getUsage(uplink))
+			dst.CustomMetrics["Sent"] = kt.MetricInfo{Oid: "meraki", Mib: "meraki", Profile: "meraki.clients", Type: "meraki.clients"}
+
+			dst.CustomBigInt["Recv"] = int64(getUsage(uplink))
+			dst.CustomMetrics["Recv"] = kt.MetricInfo{Oid: "meraki", Mib: "meraki", Profile: "meraki.clients", Type: "meraki.clients"}
+
+			c.conf.SetUserTags(dst.CustomStr)
+			res = append(res, dst)
+		}
+	}
+
+	return res, nil
+}
+
+func getUsage(u uplink) (int64, int64) {
+	sent := 0
+	rcv := 0
+	for _, t := range Usage {
+		sent += int64(t.Sent * 1000)    // Kilobytes -> Bytes
+		rcv += int64(t.Received * 1000) // Same.
+	}
+
+	return sent, rcv
+}
+
 /**
+GetNetworkApplianceUplinksUsageHistory
+
+GetOrganizationApplianceUplinkStatuses
+
 GetOrganizationUplinksStatuses
 GetOrganizationDevicesUplinksLossAndLatency
 GetDeviceLossAndLatencyHistory
