@@ -58,6 +58,7 @@ func main() {
 		syslog         = flag.String("syslog.source", "", "Run Syslog Server at this IP:Port or unix socket.")
 		httpInput      = flag.Bool("http.source", false, "Listen for content sent via http.")
 		enricher       = flag.String("enricher", "", "Send data to this http url for enrichment.")
+		config         = flag.String("config", "", "If set, read all config values from here.")
 	)
 
 	metricsChan := make(chan []*kt.JCHF, cat.CHAN_SLACK)
@@ -68,6 +69,11 @@ func main() {
 	logTee := make(chan string, cat.CHAN_SLACK)
 	if *teeLog {
 		bs.SetLogTee(logTee)
+	}
+
+	// Pick up any flags we're using from the config file as passed in.
+	if err := setConfig(*config); err != nil {
+		bs.Fail(fmt.Sprintf("Invalid config: %v", err))
 	}
 
 	// If we're running in a given mode, set the flags accordingly.
@@ -202,6 +208,8 @@ func setMode(bs *baseserver.BaseServer, mode string, sample int, syslog string) 
 		flag.Set("sinks", "new_relic")
 		flag.Set("format", "new_relic_metric")
 		flag.Set("max_flows_per_message", "100")
+	case "config":
+		os.Exit(makeConfig())
 	default:
 		bs.Fail("Invalid mode " + mode + ". Options = nr1.vpc|nr1.flow|nr1.snmp|vpc|flow")
 	}
