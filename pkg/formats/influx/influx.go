@@ -1,6 +1,7 @@
 package influx
 
 import (
+	"flag"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -29,6 +30,10 @@ type InfluxData struct {
 	Tags        map[string]interface{}
 	Timestamp   int64
 }
+
+var (
+	Prefix = flag.String("influxdb_measurment_prefix", "kentik.", "Prefix metric names with this")
+)
 
 func (d *InfluxData) String() string {
 	fields := make([]string, len(d.Fields)+len(d.FieldsFloat))
@@ -181,7 +186,7 @@ func (f *InfluxFormat) fromKSynth(in *kt.JCHF) []InfluxData {
 	}
 
 	return []InfluxData{InfluxData{
-		Name:      "kentik.synth",
+		Name:      *Prefix,
 		Fields:    ms,
 		Timestamp: in.Timestamp * 1000000000,
 		Tags:      attr,
@@ -212,7 +217,7 @@ func (f *InfluxFormat) fromKflow(in *kt.JCHF) []InfluxData {
 	}
 
 	return []InfluxData{InfluxData{
-		Name:      "kentik.flow",
+		Name:      *Prefix,
 		Fields:    ms,
 		Timestamp: in.Timestamp * 1000000000,
 		Tags:      attr,
@@ -238,17 +243,16 @@ func (f *InfluxFormat) fromSnmpDeviceMetric(in *kt.JCHF) []InfluxData {
 				continue // This Metric isn't in the white list so lets drop it.
 			}
 
-			mtype := name.GetType()
 			if name.Format == kt.FloatMS {
 				results = append(results, InfluxData{
-					Name:        "kentik." + mtype,
+					Name:        *Prefix,
 					FieldsFloat: map[string]float64{m: float64(float64(in.CustomBigInt[m]) / 1000)},
 					Timestamp:   in.Timestamp * 1000000000,
 					Tags:        attrNew,
 				})
 			} else {
 				results = append(results, InfluxData{
-					Name:      "kentik." + mtype,
+					Name:      *Prefix,
 					Fields:    map[string]int64{m: int64(in.CustomBigInt[m])},
 					Timestamp: in.Timestamp * 1000000000,
 					Tags:      attrNew,
@@ -281,17 +285,16 @@ func (f *InfluxFormat) fromSnmpInterfaceMetric(in *kt.JCHF) []InfluxData {
 				continue // This Metric isn't in the white list so lets drop it.
 			}
 
-			mtype := name.GetType()
 			if name.Format == kt.FloatMS {
 				results = append(results, InfluxData{
-					Name:        "kentik." + mtype,
+					Name:        *Prefix,
 					FieldsFloat: map[string]float64{m: float64(float64(in.CustomBigInt[m]) / 1000)},
 					Timestamp:   in.Timestamp * 1000000000,
 					Tags:        attrNew,
 				})
 			} else {
 				results = append(results, InfluxData{
-					Name:      "kentik." + mtype,
+					Name:      *Prefix,
 					Fields:    map[string]int64{m: int64(in.CustomBigInt[m])},
 					Timestamp: in.Timestamp * 1000000000,
 					Tags:      attrNew,
@@ -311,7 +314,7 @@ func (f *InfluxFormat) fromSnmpInterfaceMetric(in *kt.JCHF) []InfluxData {
 						if inBytes, ok := in.CustomBigInt["ifHCInOctets"]; ok {
 							if !util.DropOnFilter(attrNew, f.lastMetadata[in.DeviceName], true) {
 								results = append(results, InfluxData{
-									Name:        "kentik.snmp",
+									Name:        *Prefix,
 									FieldsFloat: map[string]float64{"IfInUtilization": float64(inBytes*8*100) / float64(uptimeSpeed)},
 									Timestamp:   in.Timestamp * 1000000000,
 									Tags:        attrNew,
@@ -331,7 +334,7 @@ func (f *InfluxFormat) fromSnmpInterfaceMetric(in *kt.JCHF) []InfluxData {
 						if outBytes, ok := in.CustomBigInt["ifHCOutOctets"]; ok {
 							if !util.DropOnFilter(attrNew, f.lastMetadata[in.DeviceName], true) {
 								results = append(results, InfluxData{
-									Name:        "kentik.snmp",
+									Name:        *Prefix,
 									FieldsFloat: map[string]float64{"IfOutUtilization": float64(outBytes*8*100) / float64(uptimeSpeed)},
 									Timestamp:   in.Timestamp * 1000000000,
 									Tags:        attrNew,
