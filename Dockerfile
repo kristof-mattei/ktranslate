@@ -21,7 +21,7 @@ RUN curl -o /tmp/asn.tar.gz "https://download.maxmind.com/app/geoip_download?edi
 # snmp profiles
 FROM alpine:latest as snmp
 RUN apk add -U git
-RUN git clone https://github.com/kentik/snmp-profiles /snmp
+RUN git clone https://github.com/kristof-mattei/snmp-profiles --single-branch --branch synology-router /snmp
 
 # main image
 FROM alpine:3.14
